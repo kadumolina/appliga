@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(data) {
+      return data.userId == request.auth.uid;
+    }
+
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    function isValidPlayer(data) {
+      return data.keys().hasAll(['userId', 'name', 'createdAt'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.createdAt is number
+        && data.userId == request.auth.uid
+        // Optional fields
+        && (!('gender' in data) || data.gender in ['M', 'F', null])
+        && (!('phone' in data) || data.phone is string || data.phone == null)
+        && (!('birthDate' in data) || data.birthDate is string || data.birthDate == null)
+        && (!('photo' in data) || data.photo is string || data.photo == null);
+    }
+
+    function isValidTournament(data) {
+      return data.keys().hasAll(['userId', 'name', 'date', 'status', 'participants'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.date is number
+        && data.status in ['draft', 'group_stage', 'playoffs', 'completed']
+        && data.userId == request.auth.uid
+        && data.participants is list
+        // Optional fields
+        && (!('modality' in data) || data.modality is string || data.modality == null)
+        && (!('category' in data) || data.category is string || data.category == null)
+        && (!('courts' in data) || data.courts is number || data.courts == null)
+        && (!('groups' in data) || data.groups is map)
+        && (!('matches' in data) || data.matches is list)
+        && (!('finalRankings' in data) || data.finalRankings is map);
+    }
+
+    match /players/{playerId} {
+      allow read: if isSignedIn() && isOwner(resource.data);
+      allow create: if isSignedIn() && isValidId(playerId) && isValidPlayer(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && isOwner(resource.data) && isValidPlayer(request.resource.data) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isSignedIn() && isOwner(resource.data);
+    }
+
+    match /tournaments/{tournamentId} {
+      allow read: if isSignedIn() && isOwner(resource.data);
+      allow create: if isSignedIn() && isValidId(tournamentId) && isValidTournament(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && isOwner(resource.data) && isValidTournament(request.resource.data) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isSignedIn() && isOwner(resource.data);
+    }
+  }
+}

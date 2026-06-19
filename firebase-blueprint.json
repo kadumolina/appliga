@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "player": {
+      "title": "Player",
+      "description": "A player in the app",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "gender": { "type": "string", "enum": ["M", "F"] },
+        "createdAt": { "type": "number" },
+        "phone": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "photo": { "type": "string" }
+      },
+      "required": ["userId", "name", "createdAt"]
+    },
+    "tournament": {
+      "title": "Tournament",
+      "description": "A tournament",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "date": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "group_stage", "playoffs", "completed"] },
+        "modality": { "type": "string" },
+        "category": { "type": "string" },
+        "participants": { "type": "array" },
+        "courts": { "type": "number" },
+        "groups": { "type": "object" },
+        "matches": { "type": "array" },
+        "finalRankings": { "type": "object" }
+      },
+      "required": ["userId", "name", "date", "status", "participants"]
+    }
+  },
+  "firestore": {
+    "players/{playerId}": {
+      "schema": { "$ref": "#/entities/player" },
+      "description": "Players in the app"
+    },
+    "tournaments/{tournamentId}": {
+      "schema": { "$ref": "#/entities/tournament" },
+      "description": "Tournaments in the app"
+    }
+  }
+}
