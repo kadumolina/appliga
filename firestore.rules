@@ -1,62 +1,149 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
+    
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(data) {
-      return data.userId == request.auth.uid;
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'cadumolina@gmail.com' ||
+        request.auth.token.email == 'kadumolina@gmail.com'
+      );
     }
 
     function isValidId(id) { 
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    function getWorkspaceAccess(workspaceId) {
+      return exists(/databases/$(database)/documents/workspace_access/$(workspaceId)) 
+        ? get(/databases/$(database)/documents/workspace_access/$(workspaceId)).data 
+        : null;
+    }
+
+    function hasRole(workspaceId, allowedRoles) {
+      return isAdmin() || 
+             request.auth.uid == workspaceId || 
+             (getWorkspaceAccess(workspaceId) != null && 
+              (request.auth.uid in getWorkspaceAccess(workspaceId).roles) && 
+              (getWorkspaceAccess(workspaceId).roles.get(request.auth.uid, '') in allowedRoles));
     }
 
     function isValidPlayer(data) {
-      return data.keys().hasAll(['userId', 'name', 'createdAt'])
-        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
-        && data.createdAt is number
-        && data.userId == request.auth.uid
-        // Optional fields
-        && (!('gender' in data) || data.gender in ['M', 'F', null])
-        && (!('phone' in data) || data.phone is string || data.phone == null)
-        && (!('birthDate' in data) || data.birthDate is string || data.birthDate == null)
-        && (!('photo' in data) || data.photo is string || data.photo == null);
+      return data.keys().hasAll(['userId', 'name', 'createdAt']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.createdAt is number;
     }
 
     function isValidTournament(data) {
-      return data.keys().hasAll(['userId', 'name', 'date', 'status', 'participants'])
-        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
-        && data.date is number
-        && data.status in ['draft', 'group_stage', 'playoffs', 'completed']
-        && data.userId == request.auth.uid
-        && data.participants is list
-        // Optional fields
-        && (!('modality' in data) || data.modality is string || data.modality == null)
-        && (!('category' in data) || data.category is string || data.category == null)
-        && (!('courts' in data) || data.courts is number || data.courts == null)
-        && (!('groups' in data) || data.groups is map)
-        && (!('matches' in data) || data.matches is list)
-        && (!('finalRankings' in data) || data.finalRankings is map);
+      return data.keys().hasAll(['userId', 'name', 'date', 'status']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.date is number &&
+             data.status is string && data.status.size() <= 50;
+    }
+
+    function isValidWorkspaceAccess(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'ownerEmail', 'members', 'roles']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.ownerEmail is string && data.ownerEmail.size() <= 200 &&
+             data.members is list && data.members.size() <= 1000 &&
+             data.roles is map;
+    }
+
+    function isValidInvite(data) {
+      return data.keys().hasAll(['email', 'workspaceId', 'workspaceOwnerEmail', 'role', 'status', 'createdAt']) &&
+             data.email is string && data.email.size() <= 200 &&
+             data.workspaceId is string && data.workspaceId.size() <= 128 &&
+             data.role is string && data.role.size() <= 50 &&
+             data.status is string && data.status.size() <= 50 &&
+             data.createdAt is number;
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /admins/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /workspace_access/{workspaceId} {
+      allow read: if isSignedIn() && (isAdmin() || request.auth.uid == workspaceId || request.auth.uid in resource.data.members);
+      allow create: if isSignedIn() && isValidId(workspaceId) && 
+                    isValidWorkspaceAccess(incoming()) && 
+                    (isAdmin() || request.auth.uid == workspaceId);
+      allow update: if isSignedIn() && isValidWorkspaceAccess(incoming()) &&
+                    (isAdmin() || request.auth.uid == workspaceId || 
+                     (request.auth.uid in existing().roles && existing().roles.get(request.auth.uid, '') == 'owner') ||
+                     (incoming().diff(existing()).affectedKeys().hasOnly(['members', 'roles', 'memberDetails']))
+                    );
+      allow delete: if isSignedIn() && (isAdmin() || request.auth.uid == workspaceId);
+    }
+
+    match /invites/{inviteId} {
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        resource.data.email == request.auth.token.email || 
+        resource.data.workspaceId == request.auth.uid
+      );
+      allow create: if isSignedIn() && isValidId(inviteId) && 
+                    isValidInvite(incoming()) && 
+                    hasRole(incoming().workspaceId, ['owner', 'editor']);
+      allow update: if isSignedIn() && isValidInvite(incoming()) &&
+                    (isAdmin() || existing().email == request.auth.token.email);
+      allow delete: if isSignedIn() && (isAdmin() || existing().email == request.auth.token.email || hasRole(existing().workspaceId, ['owner', 'editor']));
     }
 
     match /players/{playerId} {
-      allow read: if isSignedIn() && isOwner(resource.data);
-      allow create: if isSignedIn() && isValidId(playerId) && isValidPlayer(request.resource.data) && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && isOwner(resource.data) && isValidPlayer(request.resource.data) && request.resource.data.userId == resource.data.userId;
-      allow delete: if isSignedIn() && isOwner(resource.data);
+      allow read: if true;
+      allow create: if isSignedIn() && hasRole(incoming().userId, ['owner', 'editor']);
+      allow update: if isSignedIn() && hasRole(existing().userId, ['owner', 'editor']);
+      allow delete: if isSignedIn() && hasRole(existing().userId, ['owner', 'editor']);
     }
 
     match /tournaments/{tournamentId} {
-      allow read: if isSignedIn() && isOwner(resource.data);
-      allow create: if isSignedIn() && isValidId(tournamentId) && isValidTournament(request.resource.data) && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && isOwner(resource.data) && isValidTournament(request.resource.data) && request.resource.data.userId == resource.data.userId;
-      allow delete: if isSignedIn() && isOwner(resource.data);
+      allow read: if true;
+      allow create: if isSignedIn() && hasRole(incoming().userId, ['owner', 'editor']);
+      allow update: if isSignedIn() && hasRole(existing().userId, ['owner', 'editor']);
+      allow delete: if isSignedIn() && hasRole(existing().userId, ['owner', 'editor']);
+    }
+
+    match /court_rentals/{rentalId} {
+      allow read: if isSignedIn() && hasRole(resource.data.workspaceId, ['owner', 'editor', 'viewer']);
+      allow create: if isSignedIn() && hasRole(incoming().workspaceId, ['owner', 'editor']);
+      allow update: if isSignedIn() && hasRole(existing().workspaceId, ['owner', 'editor']);
+      allow delete: if isSignedIn() && hasRole(existing().workspaceId, ['owner', 'editor']);
+    }
+
+    match /students/{studentId} {
+      allow read: if isSignedIn() && hasRole(resource.data.workspaceId, ['owner', 'editor', 'viewer']);
+      allow create: if isSignedIn() && hasRole(incoming().workspaceId, ['owner', 'editor']);
+      allow update: if isSignedIn() && hasRole(existing().workspaceId, ['owner', 'editor']);
+      allow delete: if isSignedIn() && hasRole(existing().workspaceId, ['owner', 'editor']);
+    }
+
+    match /class_slots/{slotId} {
+      allow read: if isSignedIn() && hasRole(resource.data.workspaceId, ['owner', 'editor', 'viewer']);
+      allow create: if isSignedIn() && hasRole(incoming().workspaceId, ['owner', 'editor']);
+      allow update: if isSignedIn() && hasRole(existing().workspaceId, ['owner', 'editor']);
+      allow delete: if isSignedIn() && hasRole(existing().workspaceId, ['owner', 'editor']);
+    }
+
+    match /general_transactions/{transactionId} {
+      allow read: if isSignedIn() && hasRole(resource.data.workspaceId, ['owner', 'editor', 'viewer']);
+      allow create: if isSignedIn() && hasRole(incoming().workspaceId, ['owner', 'editor']);
+      allow update: if isSignedIn() && hasRole(existing().workspaceId, ['owner', 'editor']);
+      allow delete: if isSignedIn() && hasRole(existing().workspaceId, ['owner', 'editor']);
     }
   }
 }

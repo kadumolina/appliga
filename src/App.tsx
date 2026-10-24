@@ -7,6 +7,10 @@ import Rankings from './pages/Rankings';
 import Tournaments from './pages/Tournaments';
 import TournamentDetails from './pages/TournamentDetails';
 import PlayerDetails from './pages/PlayerDetails';
+import Admin from './pages/Admin';
+import CourtRental from './pages/CourtRental';
+import ClassSchedule from './pages/ClassSchedule';
+import Finance from './pages/Finance';
 import { AppProvider } from './store/AppContext';
 
 export default function App() {
@@ -21,6 +25,10 @@ export default function App() {
             <Route path="rankings" element={<Rankings />} />
             <Route path="tournaments" element={<Tournaments />} />
             <Route path="tournaments/:id" element={<TournamentDetails />} />
+            <Route path="court-rental" element={<CourtRental />} />
+            <Route path="class-schedule" element={<ClassSchedule />} />
+            <Route path="finance" element={<Finance />} />
+            <Route path="admin" element={<Admin />} />
           </Route>
         </Routes>
       </BrowserRouter>

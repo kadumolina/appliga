@@ -1,5 +1,39 @@
 {
   "entities": {
+    "admin": {
+      "title": "Admin",
+      "description": "An admin user",
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "workspace_access": {
+      "title": "Workspace Access",
+      "description": "Workspace roles and members",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "members": { "type": "array" },
+        "roles": { "type": "object" }
+      },
+      "required": ["id", "ownerId", "ownerEmail", "members", "roles"]
+    },
+    "invite": {
+      "title": "Invite",
+      "description": "An invite to a workspace",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "workspaceOwnerEmail": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["email", "workspaceId", "role", "status", "createdAt"]
+    },
     "player": {
       "title": "Player",
       "description": "A player in the app",
@@ -7,11 +41,7 @@
       "properties": {
         "userId": { "type": "string" },
         "name": { "type": "string" },
-        "gender": { "type": "string", "enum": ["M", "F"] },
-        "createdAt": { "type": "number" },
-        "phone": { "type": "string" },
-        "birthDate": { "type": "string" },
-        "photo": { "type": "string" }
+        "createdAt": { "type": "number" }
       },
       "required": ["userId", "name", "createdAt"]
     },
@@ -23,19 +53,91 @@
         "userId": { "type": "string" },
         "name": { "type": "string" },
         "date": { "type": "number" },
-        "status": { "type": "string", "enum": ["draft", "group_stage", "playoffs", "completed"] },
-        "modality": { "type": "string" },
-        "category": { "type": "string" },
-        "participants": { "type": "array" },
-        "courts": { "type": "number" },
-        "groups": { "type": "object" },
-        "matches": { "type": "array" },
-        "finalRankings": { "type": "object" }
+        "status": { "type": "string" }
       },
-      "required": ["userId", "name", "date", "status", "participants"]
+      "required": ["userId", "name", "date", "status"]
+    },
+    "court_rental": {
+      "title": "Court Rental",
+      "description": "A court rental booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "renterName": { "type": "string" },
+        "phone": { "type": "string" },
+        "date": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "price": { "type": "number" },
+        "paid": { "type": "boolean" },
+        "paymentMethod": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "workspaceId", "renterName", "date", "startTime", "endTime", "price", "paid"]
+    },
+    "student": {
+      "title": "Student",
+      "description": "A student in the academy",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "classesRemaining": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "workspaceId", "name", "classesRemaining", "createdAt"]
+    },
+    "class_slot": {
+      "title": "Class Slot",
+      "description": "A class schedule slot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "dayOfWeek": { "type": "string" },
+        "time": { "type": "string" },
+        "className": { "type": "string" },
+        "maxStudents": { "type": "number" },
+        "studentIds": { "type": "array" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "workspaceId", "dayOfWeek", "time", "className", "maxStudents", "studentIds", "createdAt"]
+    },
+    "general_transaction": {
+      "title": "General Transaction",
+      "description": "A financial transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "type": { "type": "string" },
+        "category": { "type": "string" },
+        "customCategory": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "cleared": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "workspaceId", "type", "category", "amount", "date", "cleared", "createdAt"]
     }
   },
   "firestore": {
+    "admins/{uid}": {
+      "schema": { "$ref": "#/entities/admin" },
+      "description": "Admin users"
+    },
+    "workspace_access/{workspaceId}": {
+      "schema": { "$ref": "#/entities/workspace_access" },
+      "description": "Access control for workspaces"
+    },
+    "invites/{inviteId}": {
+      "schema": { "$ref": "#/entities/invite" },
+      "description": "Invites for users"
+    },
     "players/{playerId}": {
       "schema": { "$ref": "#/entities/player" },
       "description": "Players in the app"
@@ -43,6 +145,22 @@
     "tournaments/{tournamentId}": {
       "schema": { "$ref": "#/entities/tournament" },
       "description": "Tournaments in the app"
+    },
+    "court_rentals/{rentalId}": {
+      "schema": { "$ref": "#/entities/court_rental" },
+      "description": "Court rentals booked in the system"
+    },
+    "students/{studentId}": {
+      "schema": { "$ref": "#/entities/student" },
+      "description": "Academy students"
+    },
+    "class_slots/{slotId}": {
+      "schema": { "$ref": "#/entities/class_slot" },
+      "description": "Academy schedule class slots"
+    },
+    "general_transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/general_transaction" },
+      "description": "Financial system transactions"
     }
   }
 }

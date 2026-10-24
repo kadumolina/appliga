@@ -20,7 +20,7 @@ function calculateAge(birthDateString?: string) {
 export default function PlayerDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { data } = useAppStore();
+  const { data, loading } = useAppStore();
 
   const player = data.players.find(p => p.id === id);
   const age = calculateAge(player?.birthDate);
@@ -87,6 +87,15 @@ export default function PlayerDetails() {
       tournamentsPlayed, wins, losses, gamesWon, gamesLost, titles, podiums, topPartners, topOpponents
     };
   }, [id, data]);
+
+  if (loading) {
+    return (
+      <div className="p-12 text-center text-gray-500 flex flex-col items-center justify-center min-h-[300px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500 mb-4"></div>
+        <p className="text-sm font-semibold text-gray-400">Carregando dados do atleta...</p>
+      </div>
+    );
+  }
 
   if (!player || !stats) {
     return (
