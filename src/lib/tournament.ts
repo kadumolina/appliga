@@ -1,4 +1,4 @@
-import { Player, Tournament, Match, AppData } from '../types';
+import { Player, Tournament, Match, AppData, TournamentModality } from '../types';
 
 export function getPlayerName(id: string, players: Player[]) {
   return players.find(p => p.id === id)?.name || 'Desconhecido';
@@ -7,31 +7,93 @@ export function getPlayerName(id: string, players: Player[]) {
 export function generateGroupMatches(
   groupId: string, 
   players: string[], 
-  modality: 'individual' | 'duplas_fixas' | 'mistas_aleatorias' = 'individual',
+  modality: TournamentModality = 'individual',
   allPlayers: Player[] = []
 ): Match[] {
   
-  if (modality === 'individual') {
-    if (players.length !== 4) return [];
-    const [p1, p2, p3, p4] = players;
-    return [
-      { id: crypto.randomUUID(), type: 'group', groupId, team1: [p1, p2], team2: [p3, p4], status: 'pending' },
-      { id: crypto.randomUUID(), type: 'group', groupId, team1: [p1, p3], team2: [p2, p4], status: 'pending' },
-      { id: crypto.randomUUID(), type: 'group', groupId, team1: [p1, p4], team2: [p2, p3], status: 'pending' }
-    ];
-  }
-  
-  if (modality === 'mistas_aleatorias') {
-    if (players.length !== 4) return [];
-    // Identify 2 men and 2 women
-    const men = players.filter(id => allPlayers.find(p => p.id === id)?.gender === 'M');
-    const women = players.filter(id => allPlayers.find(p => p.id === id)?.gender === 'F');
-    if (men.length !== 2 || women.length !== 2) return [];
-    
-    return [
-      { id: crypto.randomUUID(), type: 'group', groupId, team1: [men[0], women[0]], team2: [men[1], women[1]], status: 'pending' },
-      { id: crypto.randomUUID(), type: 'group', groupId, team1: [men[0], women[1]], team2: [men[1], women[0]], status: 'pending' }
-    ];
+  if (modality === 'individual' || modality === 'mistas_aleatorias') {
+    if (players.length < 4) return [];
+
+    let pList = [...players];
+    if (modality === 'mistas_aleatorias' && players.length === 4) {
+      const men = players.filter(id => allPlayers.find(p => p.id === id)?.gender === 'M');
+      const women = players.filter(id => allPlayers.find(p => p.id === id)?.gender === 'F');
+      if (men.length === 2 && women.length === 2) {
+        pList = [men[0], men[1], women[0], women[1]];
+      }
+    }
+
+    if (pList.length === 4) {
+      const [p1, p2, p3, p4] = pList;
+      return [
+        {
+          id: crypto.randomUUID(),
+          type: 'group',
+          groupId,
+          team1: [p1, p2],
+          team2: [p3, p4],
+          status: 'pending'
+        },
+        {
+          id: crypto.randomUUID(),
+          type: 'group',
+          groupId,
+          team1: [p1, p3],
+          team2: [p2, p4],
+          status: 'pending'
+        },
+        {
+          id: crypto.randomUUID(),
+          type: 'group',
+          groupId,
+          team1: [p1, p4],
+          team2: [p2, p3],
+          status: 'pending'
+        }
+      ];
+    }
+
+    // Scalable/robust scheduler for N != 4 players so matches are never blank
+    const matches: Match[] = [];
+    const N = pList.length;
+    const playerMatchCounts = new Map<string, number>();
+    pList.forEach(p => playerMatchCounts.set(p, 0));
+
+    // Target at least 3 matches per player. Total matches = ceil(N * 3 / 4)
+    const targetMatches = Math.ceil(N * 3 / 4);
+
+    for (let m = 0; m < targetMatches; m++) {
+      const sorted = [...pList].sort((a, b) => (playerMatchCounts.get(a) || 0) - (playerMatchCounts.get(b) || 0));
+      const p1 = sorted[0];
+      const p2 = sorted[1];
+      const p3 = sorted[2];
+      const p4 = sorted[3];
+
+      playerMatchCounts.set(p1, (playerMatchCounts.get(p1) || 0) + 1);
+      playerMatchCounts.set(p2, (playerMatchCounts.get(p2) || 0) + 1);
+      playerMatchCounts.set(p3, (playerMatchCounts.get(p3) || 0) + 1);
+      playerMatchCounts.set(p4, (playerMatchCounts.get(p4) || 0) + 1);
+
+      let team1 = [p1, p2];
+      let team2 = [p3, p4];
+      if (m % 3 === 1) {
+        team1 = [p1, p3];
+        team2 = [p2, p4];
+      } else if (m % 3 === 2) {
+        team1 = [p1, p4];
+        team2 = [p2, p3];
+      }
+
+      matches.push({
+        id: crypto.randomUUID(),
+        type: 'group',
+        groupId,
+        team1,
+        team2,
+        status: 'pending'
+      });
+    }
+    return matches;
   }
 
   if (modality === 'duplas_fixas') {
@@ -108,8 +170,8 @@ export function calculatePlayerStats(playersList: string[], matches: Match[]): P
 
   return Object.values(stats).sort((a, b) => {
     if (b.wins !== a.wins) return b.wins - a.wins;
-    if (b.gamesWon !== a.gamesWon) return b.gamesWon - a.gamesWon;
     if (b.gameBalance !== a.gameBalance) return b.gameBalance - a.gameBalance;
+    if (b.gamesWon !== a.gamesWon) return b.gamesWon - a.gamesWon;
     return a.gamesLost - b.gamesLost;
   });
 }
@@ -133,28 +195,30 @@ export function calculateGlobalRankings(
   data.tournaments.forEach(t => {
     if (modalityFilter && modalityFilter !== 'geral' && t.modality !== modalityFilter) return;
 
-    // Add matches to total
-    t.matches.forEach(m => {
-      if (m.status !== 'completed' || m.score1 === undefined || m.score2 === undefined) return;
-      m.team1.forEach(id => {
-        if (!scores[id]) return;
-        scores[id].totalMatches += 1;
-        scores[id].gamesWon += m.score1!;
-        scores[id].gamesLost += m.score2!;
-        scores[id].gameBalance += (m.score1! - m.score2!);
-        if (m.score1! > m.score2!) scores[id].totalWins += 1;
-        if (m.score1! < m.score2!) scores[id].totalLosses += 1;
+    // Add matches to total only if isRanked is not false
+    if (t.isRanked !== false) {
+      t.matches.forEach(m => {
+        if (m.status !== 'completed' || m.score1 === undefined || m.score2 === undefined) return;
+        m.team1.forEach(id => {
+          if (!scores[id]) return;
+          scores[id].totalMatches += 1;
+          scores[id].gamesWon += m.score1!;
+          scores[id].gamesLost += m.score2!;
+          scores[id].gameBalance += (m.score1! - m.score2!);
+          if (m.score1! > m.score2!) scores[id].totalWins += 1;
+          if (m.score1! < m.score2!) scores[id].totalLosses += 1;
+        });
+        m.team2.forEach(id => {
+          if (!scores[id]) return;
+          scores[id].totalMatches += 1;
+          scores[id].gamesWon += m.score2!;
+          scores[id].gamesLost += m.score1!;
+          scores[id].gameBalance += (m.score2! - m.score1!);
+          if (m.score2! > m.score1!) scores[id].totalWins += 1;
+          if (m.score2! < m.score1!) scores[id].totalLosses += 1;
+        });
       });
-      m.team2.forEach(id => {
-        if (!scores[id]) return;
-        scores[id].totalMatches += 1;
-        scores[id].gamesWon += m.score2!;
-        scores[id].gamesLost += m.score1!;
-        scores[id].gameBalance += (m.score2! - m.score1!);
-        if (m.score2! > m.score1!) scores[id].totalWins += 1;
-        if (m.score2! < m.score1!) scores[id].totalLosses += 1;
-      });
-    });
+    }
 
     if (t.status !== 'completed') return;
 
@@ -166,25 +230,35 @@ export function calculateGlobalRankings(
     });
 
     t.finalRankings.champion.forEach(pid => {
-      if (scores[pid]) { scores[pid].points += 100; scores[pid].titles++; }
-    });
-    t.finalRankings.runnerUp.forEach(pid => {
-      if (scores[pid]) scores[pid].points += 80;
-    });
-    t.finalRankings.thirdPlace.forEach(pid => {
-      if (scores[pid]) scores[pid].points += 65;
-    });
-    t.finalRankings.fourthPlace.forEach(pid => {
-      if (scores[pid]) scores[pid].points += 55;
-    });
-    
-    // Eliminated points (45, 40, 35, 30...)
-    t.finalRankings.eliminated.forEach((pid, idx) => {
-      const p = Math.max(10, 45 - (idx * 5)); // Minimum 10 points
       if (scores[pid]) {
-        scores[pid].points += p;
+        if (t.isRanked !== false) {
+          scores[pid].points += (t.points1 ?? 100);
+        }
+        scores[pid].titles++;
       }
     });
+    if (t.isRanked !== false) {
+      t.finalRankings.runnerUp.forEach(pid => {
+        if (scores[pid]) scores[pid].points += (t.points2 ?? 80);
+      });
+      t.finalRankings.thirdPlace.forEach(pid => {
+        if (scores[pid]) scores[pid].points += (t.points3 ?? 65);
+      });
+      t.finalRankings.fourthPlace.forEach(pid => {
+        const p3 = t.points3 ?? 65;
+        if (scores[pid]) scores[pid].points += Math.round(p3 * 0.85); // Approximate step down for 4th
+      });
+      
+      // Eliminated points
+      t.finalRankings.eliminated.forEach((pid, idx) => {
+        const p4 = Math.round((t.points3 ?? 65) * 0.85);
+        const startP = Math.round(p4 * 0.85);
+        const p = Math.max(10, startP - (idx * 5)); // Minimum 10 points
+        if (scores[pid]) {
+          scores[pid].points += p;
+        }
+      });
+    }
   });
 
   return Object.values(scores)
